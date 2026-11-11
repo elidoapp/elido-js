@@ -1,0 +1,45 @@
+{
+  "name": "@elido/api-types",
+  "version": "0.1.0",
+  "description": "TypeScript types generated from Elido's OpenAPI spec — shared by @elido/sdk and internal services.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.d.ts",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && cp src/openapi.d.ts dist/openapi.d.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/elidoapp/elido-js.git",
+    "directory": "packages/api-types"
+  },
+  "homepage": "https://elido.app/docs",
+  "bugs": {
+    "url": "https://github.com/elidoapp/elido-js/issues"
+  },
+  "author": "Elido <engineering@elido.app>",
+  "keywords": [
+    "elido",
+    "openapi",
+    "types"
+  ]
+}

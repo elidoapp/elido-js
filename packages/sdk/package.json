@@ -1,0 +1,56 @@
+{
+  "name": "@elido/sdk",
+  "version": "0.1.0",
+  "description": "Official TypeScript/JavaScript SDK for the Elido URL shortener API.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@elido/api-types": "^0.1.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/elidoapp/elido-js.git",
+    "directory": "packages/sdk"
+  },
+  "homepage": "https://elido.app/docs",
+  "bugs": {
+    "url": "https://github.com/elidoapp/elido-js/issues"
+  },
+  "author": "Elido <engineering@elido.app>",
+  "keywords": [
+    "elido",
+    "url-shortener",
+    "sdk",
+    "api-client",
+    "links",
+    "qr"
+  ],
+  "engines": {
+    "node": ">=18"
+  }
+}

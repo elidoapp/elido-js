@@ -1,0 +1,11 @@
+{
+  "name": "elido-js-monorepo",
+  "private": true,
+  "license": "MIT",
+  "workspaces": ["packages/api-types", "packages/sdk"],
+  "scripts": {
+    "build": "npm run build -w @elido/api-types && npm run build -w @elido/sdk",
+    "typecheck": "npm run build -w @elido/api-types && npm run typecheck -w @elido/sdk"
+  },
+  "devDependencies": { "typescript": "^5.7.2" }
+}
