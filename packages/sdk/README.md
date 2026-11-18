@@ -27,7 +27,7 @@ npm i @elido/sdk
 # yarn add @elido/sdk
 ```
 
-Create an API key in the Elido dashboard (it starts with `elido_`), then point the client at `https://api.elido.app`.
+Create an API key at <https://app.elido.app> (it starts with `elido_`; API reference: <https://elido.app/docs>), then point the client at `https://api.elido.app`.
 
 ## Auth
 
@@ -165,6 +165,8 @@ try {
   } else throw err;
 }
 ```
+
+Workspace writes return HTTP 403 until a workspace owner has verified their email. Use `isEmailVerificationError(err)` to detect it; `err.code` is `email_not_verified` (the caller is the owner) or `workspace_owner_email_not_verified`. Workspace objects expose `owner_email_verified`.
 
 ## Versioning
 

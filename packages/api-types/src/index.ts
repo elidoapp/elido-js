@@ -67,6 +67,7 @@ export type UpdateTagInput = Schemas["UpdateTagInput"];
 
 export type WorkspacePixels = Schemas["WorkspacePixels"];
 export type UpsertWorkspacePixelsInput = Schemas["UpsertWorkspacePixelsInput"];
+export type PixelTestResult = Schemas["PixelTestResult"];
 
 export type Campaign = Schemas["Campaign"];
 export type CreateCampaignInput = Schemas["CreateCampaignInput"];

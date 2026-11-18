@@ -32,7 +32,7 @@
     "url": "git+https://github.com/elidoapp/elido-js.git",
     "directory": "packages/api-types"
   },
-  "homepage": "https://elido.app/docs",
+  "homepage": "https://elido.app",
   "bugs": {
     "url": "https://github.com/elidoapp/elido-js/issues"
   },

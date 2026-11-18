@@ -81,6 +81,7 @@ import type {
   UpdateTagInput,
   WorkspacePixels,
   UpsertWorkspacePixelsInput,
+  PixelTestResult,
   LinkMetadata,
   UpdateAppLinksInput,
   WorkspaceDomain,
@@ -164,12 +165,12 @@ import type {
   CreateCtaOverlayInput,
   UpdateCtaOverlayInput,
   CtaStats,
+  CtaSubmissionList,
   MobileApp,
   CreateMobileAppInput,
   UpdateMobileAppInput,
   AttributionEvent,
   AttributionSummary,
-  CryptoCheckoutResponse,
   ScheduledReport,
   CreateScheduledReportInput,
   AnalyticsExportJob,
@@ -208,13 +209,16 @@ import type {
   SecurityOverview,
   TrashedLink,
   TwoFactorPolicy,
+  AnalyticsPrivacy,
+  UpdateAnalyticsPrivacyInput,
 } from "./types.js";
 
 export interface ElidoApiOptions {
   baseUrl: string;
   // Analytics base URL. Defaults to baseUrl.
   analyticsBaseUrl?: string;
-  // Optional token for the analytics host, if it is separate from baseUrl.
+  // Token for the analytics host. Defaults to `token` when
+  // analyticsBaseUrl is not set.
   analyticsToken?: string;
   // Billing base URL. Defaults to baseUrl when not set.
   billingBaseUrl?: string;
@@ -327,6 +331,23 @@ function jitter(ms: number): number {
   // Decorrelated jitter, ±25%. Keeps retries from synchronising across
   // many SDK instances hitting the same blip.
   return ms * (0.75 + Math.random() * 0.5);
+}
+
+/** Error codes returned with HTTP 403 when a workspace write is blocked
+ *  because no owner of the workspace has a verified email. */
+export const EMAIL_NOT_VERIFIED = "email_not_verified";
+export const WORKSPACE_OWNER_EMAIL_NOT_VERIFIED =
+  "workspace_owner_email_not_verified";
+
+/** True when `err` is the 403 returned for a write blocked by an unverified
+ *  owner email (either the caller's own, or another owner's). */
+export function isEmailVerificationError(err: unknown): err is ElidoApiError {
+  return (
+    err instanceof ElidoApiError &&
+    err.status === 403 &&
+    (err.code === EMAIL_NOT_VERIFIED ||
+      err.code === WORKSPACE_OWNER_EMAIL_NOT_VERIFIED)
+  );
 }
 
 export class ElidoApiError extends Error {
@@ -1150,6 +1171,14 @@ export class ElidoApi {
       ),
     delete: (workspaceId: number) =>
       this.request<void>("DELETE", `/v1/workspaces/${workspaceId}/pixels`),
+    /** Send one server-side test event (Meta CAPI / TikTok Events API)
+     * with the saved test event code; returns the platform's answer. */
+    test: (workspaceId: number, platform: "meta" | "tiktok") =>
+      this.request<PixelTestResult>(
+        "POST",
+        `/v1/workspaces/${workspaceId}/pixels/test`,
+        { body: { platform } },
+      ),
   };
 
   // === Workspace event integrations (GA4 / Mixpanel / Klaviyo / Brevo / Datadog) ===
@@ -1509,6 +1538,21 @@ export class ElidoApi {
     }>("POST", `/v1/workspaces/${workspaceId}/uploads/presign`, {
       body: input,
     });
+
+  // === Click analytics privacy (no-personal-data mode, retention) ===
+  analyticsPrivacy = {
+    get: (workspaceId: number) =>
+      this.request<AnalyticsPrivacy>(
+        "GET",
+        `/v1/workspaces/${workspaceId}/analytics-privacy`,
+      ),
+    update: (workspaceId: number, input: UpdateAnalyticsPrivacyInput) =>
+      this.request<AnalyticsPrivacy>(
+        "PUT",
+        `/v1/workspaces/${workspaceId}/analytics-privacy`,
+        { body: input },
+      ),
+  };
 
   // === Compliance posture ===
   compliance = {
@@ -2711,6 +2755,27 @@ export class ElidoApi {
         "GET",
         `/v1/workspaces/${workspaceId}/cta/${ctaId}/stats`,
       ),
+    /** Email / survey answers (needs cta_submissions.view, admin+). */
+    submissions: (
+      workspaceId: number,
+      ctaId: number,
+      opts: { limit?: number } = {},
+    ) =>
+      this.request<CtaSubmissionList>(
+        "GET",
+        `/v1/workspaces/${workspaceId}/cta/${ctaId}/submissions${
+          opts.limit ? `?limit=${opts.limit}` : ""
+        }`,
+      ),
+    deleteSubmission: (
+      workspaceId: number,
+      ctaId: number,
+      submissionId: number,
+    ) =>
+      this.request<void>(
+        "DELETE",
+        `/v1/workspaces/${workspaceId}/cta/${ctaId}/submissions/${submissionId}`,
+      ),
   };
 
   // === Mobile attribution ===
@@ -2780,21 +2845,6 @@ export class ElidoApi {
       this.billingRequest<CheckoutResponse>(
         "POST",
         `/v1/billing/workspaces/${workspaceId}/checkout`,
-        {
-          body: { plan_id: planId, coupon_code: couponCode || undefined },
-          idempotencyKey: options?.idempotencyKey,
-          signal: options?.signal,
-        },
-      ),
-    cryptoCheckout: (
-      workspaceId: number,
-      planId: number,
-      couponCode?: string,
-      options?: RequestOptions,
-    ) =>
-      this.billingRequest<CryptoCheckoutResponse>(
-        "POST",
-        `/v1/billing/workspaces/${workspaceId}/checkout/crypto`,
         {
           body: { plan_id: planId, coupon_code: couponCode || undefined },
           idempotencyKey: options?.idempotencyKey,
@@ -2897,6 +2947,10 @@ export class ElidoApi {
       }>("POST", `/v1/billing/workspaces/${workspaceId}/switch-now`, {
         body: payload,
       }),
+    /**
+     * @deprecated Postpay overage is disabled (2026-11-12): `set` returns
+     * 409 `overage_disabled`. Plans hard-cap; upgrade to raise limits.
+     */
     overageConsent: {
       get: (workspaceId: number) =>
         this.billingRequest<{
@@ -2931,6 +2985,9 @@ export class ElidoApi {
         limits: EffectiveLimits | null;
       }>("GET", `/bff/billing/workspaces/${workspaceId}/usage`),
     /**
+     * @deprecated Link packs are switched off (2026-11-12): the catalog is
+     * empty and `buy` is refused. Upgrade the plan to raise limits.
+     *
      * Prepay link packs — one-time top-ups bought via Paddle.
      * The list endpoint returns the catalog + the workspace's current
      * credit balance; buy opens a Paddle checkout and returns the URL the
@@ -3413,14 +3470,24 @@ export class ElidoApi {
     }
   }
 
+  // The analytics token falls back to the main token when analytics is
+  // served from baseUrl (the public API proxies it), so an API key alone
+  // works. With a separate analyticsBaseUrl only analyticsToken is sent:
+  // that host has its own credentials.
+  private analyticsAuthToken(): string | undefined {
+    if (this.opts.analyticsToken) return this.opts.analyticsToken;
+    return this.opts.analyticsBaseUrl ? undefined : this.opts.token;
+  }
+
   private async analyticsRequest<T>(
     path: string,
     init: { method?: "GET" | "POST"; body?: unknown } = {},
   ): Promise<T> {
     const baseUrl = this.opts.analyticsBaseUrl ?? this.opts.baseUrl;
     const headers: Record<string, string> = {};
-    if (this.opts.analyticsToken) {
-      headers["Authorization"] = `Bearer ${this.opts.analyticsToken}`;
+    const analyticsToken = this.analyticsAuthToken();
+    if (analyticsToken) {
+      headers["Authorization"] = `Bearer ${analyticsToken}`;
     }
     if (init.body !== undefined) {
       headers["Content-Type"] = "application/json";
@@ -3439,8 +3506,9 @@ export class ElidoApi {
   private async analyticsBlob(path: string): Promise<Blob> {
     const baseUrl = this.opts.analyticsBaseUrl ?? this.opts.baseUrl;
     const headers: Record<string, string> = {};
-    if (this.opts.analyticsToken) {
-      headers["Authorization"] = `Bearer ${this.opts.analyticsToken}`;
+    const analyticsToken = this.analyticsAuthToken();
+    if (analyticsToken) {
+      headers["Authorization"] = `Bearer ${analyticsToken}`;
     }
     return this.fetchWithRetry<Blob>(`${baseUrl.replace(/\/$/, "")}${path}`, {
       method: "GET",

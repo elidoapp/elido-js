@@ -55,40 +55,6 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  "/v1/users": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Create user (dev seed) */
-    post: operations["createUser"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/v1/users/{user_id}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Get user by ID */
-    get: operations["getUser"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
   "/v1/me": {
     parameters: {
       query?: never;
@@ -865,6 +831,31 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/v1/workspaces/{workspace_id}/pixels/test": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspace_id: components["parameters"]["WorkspaceID"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Send one server-side test event (Meta CAPI PageView or TikTok ViewContent) with the saved test event code
+     * @description Uses the saved pixel id, access token and test event code. A
+     *     platform rejection is a 200 with ok=false and the platform's
+     *     answer in platform_response. 409 when the platform is not
+     *     configured, 503 when at-rest encryption is not configured.
+     */
+    post: operations["testPixelEvent"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/v1/workspaces/{workspace_id}/branding": {
     parameters: {
       query?: never;
@@ -1150,7 +1141,12 @@ export interface paths {
     delete: operations["deleteCtaOverlay"];
     options?: never;
     head?: never;
-    /** Update a CTA overlay */
+    /**
+     * Update a CTA overlay
+     * @description name, cta_type, position and colours: omitted or "" = unchanged.
+     *     Content fields (headline, body_text, button_text, button_url,
+     *     image_url, custom_html): omitted = unchanged, "" = cleared.
+     */
     patch: operations["updateCtaOverlay"];
     trace?: never;
   };
@@ -1168,6 +1164,80 @@ export interface paths {
     get: operations["getCtaOverlayStats"];
     put?: never;
     post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/workspaces/{workspace_id}/cta/{cta_id}/submissions": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspace_id: components["parameters"]["WorkspaceID"];
+        cta_id: number;
+      };
+      cookie?: never;
+    };
+    /**
+     * List email_capture / survey answers of a CTA overlay
+     * @description Newest first. Needs `cta_submissions.view` (admin and owner by
+     *     default): the emails are visitors' personal data. `format=csv`
+     *     returns up to 1000 rows as text/csv (created_at, kind, email,
+     *     answer, link_id) instead of JSON.
+     */
+    get: operations["listCtaSubmissions"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/workspaces/{workspace_id}/cta/{cta_id}/submissions/{submission_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspace_id: components["parameters"]["WorkspaceID"];
+        cta_id: number;
+        submission_id: number;
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /** Delete one CTA submission (for example a visitor's erasure request) */
+    delete: operations["deleteCtaSubmission"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/public/cta/{cta_id}/submit": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        cta_id: number;
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Visitor answer from the edge overlay page (public)
+     * @description Called by the overlay page the edge serves on short-link domains. A
+     *     CORS simple request (form-encoded, no credentials); the response
+     *     carries `Access-Control-Allow-Origin: *`. Rate-limited per visitor
+     *     IP and overlay (burst 5, then one every 12 s) and per overlay. A
+     *     repeat email for the same overlay is accepted and stored once. No IP
+     *     address or user agent is stored.
+     */
+    post: operations["submitCtaAnswer"];
     delete?: never;
     options?: never;
     head?: never;
@@ -1474,9 +1544,17 @@ export interface components {
       deleted_at: string | null;
       /** @default UTC */
       default_timezone: string;
+      /**
+       * @description Query-parameter pass-through value for links created without an
+       *     explicit forward_query. true for workspaces created after
+       *     2026-11-12, false for older ones until an admin changes it.
+       */
+      forward_query_default?: boolean;
     };
     WorkspaceWithRole: components["schemas"]["Workspace"] & {
       role: components["schemas"]["WorkspaceRole"];
+      /** @description The workspace owner's email is verified. Absent from older API builds (treat as true). */
+      owner_email_verified?: boolean;
       /** @description Workspace primary colour (hex or oklch) when branding is enabled, null otherwise. */
       branding_primary_color?: string | null;
       /** @description Workspace logo URL when branding is enabled and the logo is hosted (not a data URL), null otherwise. */
@@ -1494,6 +1572,11 @@ export interface components {
       name?: string;
       slug?: string;
       default_timezone?: string;
+      /**
+       * @description Default query-parameter pass-through for links created from now
+       *     on. Existing links keep their own setting.
+       */
+      forward_query_default?: boolean;
     };
     WorkspaceMember: {
       /** Format: int64 */
@@ -1586,6 +1669,45 @@ export interface components {
        */
       show_splash?: boolean;
       /**
+       * Format: int64
+       * @description Attached CTA overlay; null = none.
+       */
+      cta_overlay_id?: number | null;
+      /**
+       * @description Async framing verdict for the CTA overlay. null = not checked yet,
+       *     true = destination allows framing (overlay shown to visitors),
+       *     false = X-Frame-Options / CSP frame-ancestors forbid it (plain
+       *     redirect). Re-checked daily and after each destination change.
+       */
+      cta_frameable?: boolean | null;
+      /**
+       * @description Query-parameter pass-through. When true, the edge appends the
+       *     visitor's incoming query string (gclid, fbclid, msclkid, utm_*,
+       *     ...) to the destination. On a key clash the destination's own
+       *     value wins, except ad click IDs (gclid, gbraid, wbraid, fbclid,
+       *     msclkid, ttclid, li_fat_id, twclid, epik, ScCid) where the
+       *     incoming value wins. Edge params (preview, ok) are never
+       *     forwarded; the fragment is kept; forwarding is skipped when the
+       *     result would exceed 8 KB.
+       */
+      forward_query?: boolean;
+      /**
+       * @description Sticky A/B assignment (default true). When true and
+       *     rotation_mode is "weighted", each visitor is assigned a variant
+       *     from a hash of their truncated IP (/24, /48) and User-Agent, the
+       *     link id and ab_version, so a returning visitor keeps the same
+       *     variant. Nothing is stored and no cookie is set. false = a fresh
+       *     weighted pick per click. round_robin ignores this flag.
+       */
+      ab_sticky?: boolean;
+      /**
+       * Format: int32
+       * @description Experiment version mixed into sticky assignment. Incremented by
+       *     PATCH ab_reshuffle=true, which re-deals every visitor. Weight
+       *     edits and added/paused variants only move the visitors they must.
+       */
+      ab_version?: number;
+      /**
        * @description url-scanner composite risk score (0=safe, 100=definitely
        *     malicious). The latest scan's score is mirrored onto the link.
        */
@@ -1651,6 +1773,15 @@ export interface components {
       google_id?: string | null;
       linkedin_id?: string | null;
       tiktok_id?: string | null;
+      /** @description false when SECRET_AT_REST_KEY is not configured, so server-side tokens cannot be stored. */
+      server_side_available?: boolean;
+      meta_capi_token_set?: boolean;
+      /** @description First 4 + last 4 characters of the Meta Conversions API token. The token itself is never returned. */
+      meta_capi_token_masked?: string | null;
+      meta_test_event_code?: string | null;
+      tiktok_access_token_set?: boolean;
+      tiktok_access_token_masked?: string | null;
+      tiktok_test_event_code?: string | null;
       /** Format: date-time */
       created_at?: string;
       /** Format: date-time */
@@ -1661,6 +1792,13 @@ export interface components {
       google_id?: string | null;
       linkedin_id?: string | null;
       tiktok_id?: string | null;
+      /** @description Meta Conversions API access token. Stored encrypted, never returned. Omit to keep, "" to clear. */
+      meta_capi_access_token?: string | null;
+      /** @description Events Manager test event code, used only by POST /pixels/test. */
+      meta_test_event_code?: string | null;
+      /** @description TikTok Events API access token. Stored encrypted, never returned. Omit to keep, "" to clear. */
+      tiktok_access_token?: string | null;
+      tiktok_test_event_code?: string | null;
     };
     Folder: {
       /** Format: int64 */
@@ -1755,6 +1893,20 @@ export interface components {
       rotation_mode?: "weighted" | "round_robin";
       /** @description Opt into the conversion-tracking splash interstitial. */
       show_splash?: boolean;
+      /**
+       * Format: int64
+       * @description CTA overlay id of the same workspace (Pro plan and above). 404 if
+       *     the overlay is not in this workspace, 402 (code plan_required) on
+       *     plans without CTA overlays, 422 for encrypted links.
+       */
+      cta_overlay_id?: number;
+      /**
+       * @description Query-parameter pass-through for this link. Omit to use the
+       *     workspace's forward_query_default.
+       */
+      forward_query?: boolean;
+      /** @description Sticky A/B assignment per visitor. Omit for the default (true). */
+      ab_sticky?: boolean;
     };
     /** @description All fields optional; omitted fields are unchanged. */
     UpdateLinkInput: {
@@ -1801,6 +1953,23 @@ export interface components {
       rotation_mode?: "weighted" | "round_robin";
       /** @description Opt into / out of the conversion-tracking splash interstitial. */
       show_splash?: boolean;
+      /**
+       * Format: int64
+       * @description Attach a CTA overlay of the same workspace (Pro plan and above).
+       *     Send 0 to detach. 404 if the overlay is not in this workspace,
+       *     402 (code plan_required) on plans without CTA overlays, 422 for
+       *     encrypted links.
+       */
+      cta_overlay_id?: number;
+      /** @description Turn query-parameter pass-through on or off. */
+      forward_query?: boolean;
+      /** @description Turn sticky A/B assignment on or off. */
+      ab_sticky?: boolean;
+      /**
+       * @description true increments ab_version so every visitor of the link's A/B
+       *     test is assigned a variant afresh. false is a no-op.
+       */
+      ab_reshuffle?: boolean;
     };
     TargetingRule: {
       /**
@@ -2230,6 +2399,13 @@ export interface components {
       tiktok_id?: string | null;
       stripe_webhook_set: boolean;
       shopify_webhook_set: boolean;
+      server_side_available?: boolean;
+      meta_capi_token_set?: boolean;
+      meta_capi_token_masked?: string | null;
+      meta_test_event_code?: string | null;
+      tiktok_access_token_set?: boolean;
+      tiktok_access_token_masked?: string | null;
+      tiktok_test_event_code?: string | null;
       /** Format: date-time */
       created_at?: string;
       /** Format: date-time */
@@ -2246,6 +2422,29 @@ export interface components {
       tiktok_id?: string;
       stripe_webhook_secret?: string;
       shopify_webhook_secret?: string;
+      /** @description Meta Conversions API token; stored encrypted, returned only masked. */
+      meta_capi_access_token?: string;
+      meta_test_event_code?: string;
+      /** @description TikTok Events API token; stored encrypted, returned only masked. */
+      tiktok_access_token?: string;
+      tiktok_test_event_code?: string;
+    };
+    PixelTestInput: {
+      /** @enum {string} */
+      platform: "meta" | "tiktok";
+    };
+    PixelTestResult: {
+      ok: boolean;
+      /** @enum {string} */
+      platform: "meta" | "tiktok";
+      test_event_code_used?: boolean;
+      error?: string;
+      note?: string;
+      platform_response?: {
+        endpoint?: string;
+        status?: number;
+        body?: string;
+      };
     };
     Branding: {
       /** Format: int64 */
@@ -2544,9 +2743,20 @@ export interface components {
       workspace_id: number;
       name: string;
       /** @enum {string} */
-      cta_type: "text_button" | "banner" | "modal" | "custom_html";
+      cta_type:
+        | "text_button"
+        | "email_capture"
+        | "social_follow"
+        | "discount_code"
+        | "survey"
+        | "custom_html";
       /** @enum {string} */
-      position: "bottom_bar" | "top_bar" | "popup" | "slide_in";
+      position:
+        | "bottom_bar"
+        | "top_bar"
+        | "bottom_right"
+        | "bottom_left"
+        | "modal_center";
       headline?: string | null;
       body_text?: string | null;
       button_text?: string | null;
@@ -2563,18 +2773,71 @@ export interface components {
       /** Format: date-time */
       updated_at: string;
     };
+    CtaSubmission: {
+      /** Format: int64 */
+      id: number;
+      /** Format: int64 */
+      cta_overlay_id: number;
+      /** Format: int64 */
+      workspace_id: number;
+      /** Format: int64 */
+      link_id?: number | null;
+      /** @enum {string} */
+      kind: "email" | "survey";
+      email?: string;
+      answer?: string;
+      /** Format: date-time */
+      created_at: string;
+    };
+    /**
+     * @description Every cta_type and position renders on the edge. Fields per type
+     *     (422 when they do not fit):
+     *     - text_button: headline (required), body_text, image_url,
+     *       button_text + button_url (required).
+     *     - email_capture: headline (required), body_text, image_url;
+     *       button_text = submit label (optional), button_url = your privacy
+     *       policy (optional). Answers: GET .../cta/{cta_id}/submissions.
+     *     - discount_code: headline (required), body_text, image_url;
+     *       button_text = the code (required, max 40), button_url = shop link
+     *       (optional). Visitors get a Copy button.
+     *     - social_follow: headline (required); body_text = 1-8 profile URLs,
+     *       one per line (absolute http(s)).
+     *     - survey: headline = the question (required); body_text = 2-6
+     *       answers, one per line (max 80 chars each, no duplicates);
+     *       button_text = thank-you text (optional).
+     *     - custom_html: custom_html (required, max 10 000 chars), shown in a
+     *       sandboxed frame: no scripts, forms or remote requests except
+     *       https images; links open in a new tab.
+     *     Limits: headline 200, body_text 1000, button_text 80, URLs 2048.
+     *     Colours are #rgb or #rrggbb. The card follows the visitor's
+     *     light/dark theme; button_bg / button_text_color colour the button.
+     *     Positions: top_bar and bottom_bar (bar), bottom_right and
+     *     bottom_left (floating card; a bottom sheet on phones),
+     *     modal_center (dialog with a backdrop; Esc or the backdrop closes it).
+     */
     CtaOverlayCreate: {
       name: string;
       /**
        * @default text_button
        * @enum {string}
        */
-      cta_type: "text_button" | "banner" | "modal" | "custom_html";
+      cta_type:
+        | "text_button"
+        | "email_capture"
+        | "social_follow"
+        | "discount_code"
+        | "survey"
+        | "custom_html";
       /**
        * @default bottom_bar
        * @enum {string}
        */
-      position: "bottom_bar" | "top_bar" | "popup" | "slide_in";
+      position:
+        | "bottom_bar"
+        | "top_bar"
+        | "bottom_right"
+        | "bottom_left"
+        | "modal_center";
       headline?: string;
       body_text?: string;
       button_text?: string;
@@ -2593,9 +2856,20 @@ export interface components {
     CtaOverlayUpdate: {
       name?: string;
       /** @enum {string} */
-      cta_type?: "text_button" | "banner" | "modal" | "custom_html";
+      cta_type?:
+        | "text_button"
+        | "email_capture"
+        | "social_follow"
+        | "discount_code"
+        | "survey"
+        | "custom_html";
       /** @enum {string} */
-      position?: "bottom_bar" | "top_bar" | "popup" | "slide_in";
+      position?:
+        | "bottom_bar"
+        | "top_bar"
+        | "bottom_right"
+        | "bottom_left"
+        | "modal_center";
       headline?: string;
       body_text?: string;
       button_text?: string;
@@ -2945,55 +3219,6 @@ export interface operations {
       };
     };
   };
-  createUser: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["CreateUserInput"];
-      };
-    };
-    responses: {
-      /** @description Created */
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["User"];
-        };
-      };
-      400: components["responses"]["BadRequest"];
-      409: components["responses"]["Conflict"];
-    };
-  };
-  getUser: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        user_id: components["parameters"]["UserID"];
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["User"];
-        };
-      };
-      404: components["responses"]["NotFound"];
-    };
-  };
   getMe: {
     parameters: {
       query?: never;
@@ -3111,7 +3336,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["Workspace"];
+          "application/json": components["schemas"]["WorkspaceWithRole"];
         };
       };
       401: components["responses"]["Unauthorized"];
@@ -4503,6 +4728,39 @@ export interface operations {
       };
     };
   };
+  testPixelEvent: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspace_id: components["parameters"]["WorkspaceID"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["PixelTestInput"];
+      };
+    };
+    responses: {
+      /** @description Sent; see ok / platform_response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["PixelTestResult"];
+        };
+      };
+      /** @description Pixel id or access token not saved */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
   getBranding: {
     parameters: {
       query?: never;
@@ -5090,6 +5348,19 @@ export interface operations {
       400: components["responses"]["BadRequest"];
       401: components["responses"]["Unauthorized"];
       403: components["responses"]["Forbidden"];
+      /**
+       * @description Content does not fit the cta_type (see CtaOverlayCreate), a URL is
+       *     not absolute http(s), a colour is not #rgb/#rrggbb, or a field is
+       *     too long.
+       */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
     };
   };
   getCtaOverlay: {
@@ -5165,6 +5436,15 @@ export interface operations {
       };
       400: components["responses"]["BadRequest"];
       404: components["responses"]["NotFound"];
+      /** @description Merged content does not fit the cta_type (same rules as create). */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
     };
   };
   getCtaOverlayStats: {
@@ -5194,6 +5474,128 @@ export interface operations {
             clicks?: number;
           };
         };
+      };
+    };
+  };
+  listCtaSubmissions: {
+    parameters: {
+      query?: {
+        limit?: number;
+        format?: "json" | "csv";
+      };
+      header?: never;
+      path: {
+        workspace_id: components["parameters"]["WorkspaceID"];
+        cta_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Submissions */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            items: components["schemas"]["CtaSubmission"][];
+            /** Format: int64 */
+            total: number;
+            /** @description Survey tallies, most chosen first. */
+            answers: {
+              answer?: string;
+              /** Format: int64 */
+              count?: number;
+            }[];
+          };
+          "text/csv": string;
+        };
+      };
+      403: components["responses"]["Forbidden"];
+      404: components["responses"]["NotFound"];
+    };
+  };
+  deleteCtaSubmission: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspace_id: components["parameters"]["WorkspaceID"];
+        cta_id: number;
+        submission_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Deleted */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      403: components["responses"]["Forbidden"];
+      404: components["responses"]["NotFound"];
+    };
+  };
+  submitCtaAnswer: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        cta_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/x-www-form-urlencoded": {
+          /** @enum {string} */
+          kind: "email" | "survey";
+          /** @description kind=email (email_capture overlays) */
+          email?: string;
+          /** @description kind=survey; must be one of the overlay's answers */
+          answer?: string;
+          /**
+           * Format: int64
+           * @description Short link the visitor came through
+           */
+          link_id?: number;
+          /** @description Honeypot; must be empty */
+          website?: string;
+        };
+      };
+    };
+    responses: {
+      /** @description Stored (or a duplicate email, ignored) */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            ok?: boolean;
+          };
+        };
+      };
+      404: components["responses"]["NotFound"];
+      /** @description Invalid email, unknown survey answer, or the overlay type does not take this kind */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Too many submissions from this visitor or for this overlay */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
       };
     };
   };

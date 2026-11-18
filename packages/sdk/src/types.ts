@@ -24,6 +24,7 @@ export type {
   UpdateTagInput,
   WorkspacePixels,
   UpsertWorkspacePixelsInput,
+  PixelTestResult,
   Campaign,
   CreateCampaignInput,
   UpdateCampaignInput,
@@ -54,6 +55,30 @@ export type {
   WorkspaceBranding,
   UpsertWorkspaceBrandingInput,
 } from "@elido/api-types";
+
+// === Analytics privacy ===
+
+export interface AnalyticsPrivacy {
+  workspace_id: number;
+  plan_tier: string;
+  /** "No personal data" mode: no IP, user agent, visitor hash or city. */
+  privacy_mode: boolean;
+  /** Per-workspace retention override in days; absent = plan default. */
+  retention_override_days?: number;
+  /** Effective retention in days. */
+  retention_days: number;
+  /** Retention the plan includes; only Enterprise may exceed it. */
+  plan_retention_days: number;
+  ip_storage: string;
+  unique_visitors: string;
+  scanner_filtering: string;
+}
+
+export interface UpdateAnalyticsPrivacyInput {
+  privacy_mode?: boolean;
+  retention_override_days?: number;
+  reset_retention_override?: boolean;
+}
 
 // === Bulk link mutate ===
 
@@ -1240,7 +1265,7 @@ export interface CounterSignBAAInput {
 // === Webhooks ===
 //
 // The same backend serves both raw event endpoints (kind='event'/'siem')
-// and outbound channels (kind='discord'/'telegram'/'sentry').
+// and outbound channels (kind='discord'/'telegram'/'sentry'/'slack').
 // Channel kinds carry per-vendor extras in the `config` field — see the
 // Channel*Config types below — and skip HMAC signing because the vendor
 // authenticates via the URL itself.
@@ -1250,7 +1275,10 @@ export type WebhookEndpointKind =
   | "siem"
   | "discord"
   | "telegram"
-  | "sentry";
+  | "sentry"
+  // Slack Incoming Webhook (https://hooks.slack.com/services/…); the
+  // server renders a Block Kit message. No config fields.
+  | "slack";
 
 export interface DiscordChannelConfig {
   username?: string;
@@ -1271,8 +1299,15 @@ export interface SentryChannelConfig {
   release?: string;
 }
 
+// kind='event': opt-in to receive click.created for clicks flagged
+// is_bot / is_scanner (skipped by default).
+export interface EventEndpointConfig {
+  include_bot_clicks?: boolean;
+}
+
 export type WebhookEndpointConfig =
   | Record<string, never>
+  | EventEndpointConfig
   | DiscordChannelConfig
   | TelegramChannelConfig
   | SentryChannelConfig;
@@ -1304,7 +1339,7 @@ export interface CreateWebhookEndpointResponse {
   endpoint: WebhookEndpoint;
   // Only returned for kind='event'/'siem'. The signing secret is shown
   // to the user once at creation. The server stores it but won't return
-  // it again on read. Channel kinds (discord/telegram/sentry) don't
+  // it again on read. Channel kinds (discord/telegram/sentry/slack) don't
   // sign, so this field is undefined for them.
   secret?: string;
 }
@@ -1579,6 +1614,23 @@ export interface AppliedDiscount {
   currency: string;
 }
 
+/** Discount that won "best discount wins" at checkout (code, workspace, campaign). */
+export interface CheckoutAppliedDiscount {
+  source: "code" | "workspace" | "campaign";
+  label: string;
+  percent_off?: number;
+  amount_off_cents?: number;
+  duration: "once" | "repeating" | "forever";
+  duration_months?: number;
+  coupon_code?: string;
+  campaign_id?: number;
+  currency: string;
+  original_cents: number;
+  first_charge_cents: number;
+  first_12_months_cents: number;
+  discount_cents: number;
+}
+
 export interface CheckoutResponse {
   subscription_id: number;
   status: SubscriptionStatus;
@@ -1586,22 +1638,48 @@ export interface CheckoutResponse {
   liqpay_data?: string;
   liqpay_signature?: string;
   discount?: AppliedDiscount;
+  applied_discount?: CheckoutAppliedDiscount;
 }
 
 // === CTA Overlays ===
+
+/**
+ * Overlay types. Field use per type (the API answers 422 when they do not
+ * fit): text_button = headline/body/image + button_text + button_url;
+ * email_capture = headline/body/image, button_text = submit label,
+ * button_url = privacy policy; discount_code = button_text is the code,
+ * button_url = shop link; social_follow = body_text holds 1-8 profile URLs,
+ * one per line; survey = headline is the question, body_text holds 2-6
+ * answers, one per line, button_text = thank-you text; custom_html =
+ * custom_html shown in a sandboxed frame.
+ */
+export type CtaType =
+  | "text_button"
+  | "email_capture"
+  | "social_follow"
+  | "discount_code"
+  | "survey"
+  | "custom_html";
+
+export type CtaPosition =
+  | "bottom_bar"
+  | "top_bar"
+  | "bottom_right"
+  | "bottom_left"
+  | "modal_center";
 
 export interface CtaOverlay {
   id: number;
   workspace_id: number;
   name: string;
-  cta_type: string;
-  position: string;
-  headline: string;
-  body_text: string;
-  button_text: string;
-  button_url: string;
-  image_url?: string;
-  custom_html?: string;
+  cta_type: CtaType | (string & {});
+  position: CtaPosition | (string & {});
+  headline: string | null;
+  body_text: string | null;
+  button_text: string | null;
+  button_url: string | null;
+  image_url?: string | null;
+  custom_html?: string | null;
   bg_color: string;
   text_color: string;
   button_bg: string;
@@ -1613,12 +1691,12 @@ export interface CtaOverlay {
 
 export interface CreateCtaOverlayInput {
   name: string;
-  cta_type: string;
-  position: string;
-  headline: string;
+  cta_type: CtaType | (string & {});
+  position: CtaPosition | (string & {});
+  headline?: string;
   body_text?: string;
-  button_text: string;
-  button_url: string;
+  button_text?: string;
+  button_url?: string;
   image_url?: string;
   custom_html?: string;
   bg_color?: string;
@@ -1627,13 +1705,17 @@ export interface CreateCtaOverlayInput {
   button_text_color?: string;
 }
 
+/** Omitted content fields stay as they are; "" clears one. */
 export interface UpdateCtaOverlayInput {
   name?: string;
+  cta_type?: CtaType;
+  position?: CtaPosition;
   headline?: string;
   body_text?: string;
   button_text?: string;
   button_url?: string;
   image_url?: string;
+  custom_html?: string;
   bg_color?: string;
   text_color?: string;
   button_bg?: string;
@@ -1644,6 +1726,25 @@ export interface UpdateCtaOverlayInput {
 export interface CtaStats {
   impressions: number;
   clicks: number;
+}
+
+/** A visitor's answer to an email_capture or survey overlay. */
+export interface CtaSubmission {
+  id: number;
+  cta_overlay_id: number;
+  workspace_id: number;
+  link_id: number | null;
+  kind: "email" | "survey";
+  email?: string;
+  answer?: string;
+  created_at: string;
+}
+
+export interface CtaSubmissionList {
+  items: CtaSubmission[];
+  total: number;
+  /** Survey tallies, most chosen first. */
+  answers: { answer: string; count: number }[];
 }
 
 // === Mobile Attribution ===
@@ -1720,15 +1821,6 @@ export interface RevenueByPlatformItem {
   platform: string;
   conversions: number;
   revenue_cents: number;
-}
-
-// === Crypto checkout ===
-
-export interface CryptoCheckoutResponse {
-  charge_url: string;
-  subscription_id: number;
-  status?: SubscriptionStatus;
-  discount?: AppliedDiscount;
 }
 
 // ── Advanced Analytics & Reporting ─────────────────────────
